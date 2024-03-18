@@ -251,6 +251,8 @@ class MooringLicenceReader():
     FROM shell_plus:
         from mooringlicensing.utils.mooring_licence_migrate_pd import MooringLicenceReader
         mlr=MooringLicenceReader('PersonDets.txt', 'MooringDets.txt', 'VesselDets.txt', 'UserDets.txt', 'ApplicationDets.txt', 'annual_admissions_booking_report.csv')
+        OR
+        mlr=MooringLicenceReader('PersonDets.txt', 'MooringDets.txt', 'VesselDets.txt', 'UserDets.txt', 'ApplicationDets.txt', 'annual_admissions_booking_report.csv', path='shared/clean/')
 
         mlr.create_users()
         mlr.create_vessels()
@@ -290,7 +292,7 @@ class MooringLicenceReader():
         Approval.objects.all().delete()
         Proposal.objects.all().delete()
         Vessel.objects.all().delete()
-        Owner.objects.all().delete()
+    .   Owner.objects.all().delete()
         Mooring.objects.all().delete()
         MooringBay.objects.all().delete()
 
@@ -587,7 +589,7 @@ class MooringLicenceReader():
 
 
         if not user.dob:
-            payload['dob'] = applicant.dob.strftime('%d/%m/%Y')
+            payload['dob'] = applicant.dob.strftime('%d/%m/%Y') if applicant.dob else None
             
         if not user.phone_number:
             payload['phone_number'] = applicant.phone_number
@@ -602,6 +604,10 @@ class MooringLicenceReader():
         df = self.df_dcv.groupby('pers_no').first()
         self._create_users_df(df)
         self.pers_ids_dcv = self.pers_ids
+
+        logger.info('Creating ML users ...')
+        df = self.df_ml.groupby('pers_no').first()
+        self._create_users_df(df)
 
         logger.info('Creating ML & AU users ...')
         for pers_type in ['pers_no_u', 'pers_no_l']:
@@ -621,13 +627,13 @@ class MooringLicenceReader():
         for index, row in tqdm(df.iterrows(), total=df.shape[0]):
             #if row.status != 'Vacant':
             try:
-#                if row.name == '206441':
+#                if row.name == '205737':
 #                    import ipdb; ipdb.set_trace()
 #                else:
 #                    continue
-
-                if not row.name :
-                    continue
+#
+#                if not row.name :
+#                    continue
 
                 user_row = self.df_user[self.df_user['pers_no']==row.name] #.squeeze() # as Pandas Series
                 if user_row.empty:
@@ -651,17 +657,21 @@ class MooringLicenceReader():
                 first_name = user_row.first_name.lower().title().strip()
                 last_name = user_row.last_name.lower().title().strip()
 
-                resp = get_or_create(email)                    
-                if resp['status'] == 200:
-                    if resp['data']['record_status'] == 'new' and email not in self.user_existing:
-                        self.user_created.append(email)
-                    elif resp['data']['record_status'] == 'existing' and email not in self.user_existing:
-                        self.user_existing.append(email)
-                else:
-                    logger.error(f'User creation failed: {email}')
-                    self.user_errors.append(user_row.email)
+                try:
+                    u = EmailUser.objects.get(email=email)
+                    user_id = u.id
+                except Exception as em:
+                    resp = get_or_create(email)                    
+                    if resp['status'] == 200:
+                        if resp['data']['record_status'] == 'new' and email not in self.user_existing:
+                            self.user_created.append(email)
+                        elif resp['data']['record_status'] == 'existing' and email not in self.user_existing:
+                            self.user_existing.append(email)
+                    else:
+                        logger.error(f'User creation failed: {email}')
+                        self.user_errors.append(user_row.email)
 
-                user_id = resp['data']['emailuser_id']
+                    user_id = resp['data']['emailuser_id']
                 self.pers_ids.append((user_id, row.name))
 
             except Exception as e:
@@ -699,17 +709,20 @@ class MooringLicenceReader():
                 first_name = user_row.first_name.lower().title().strip()
                 last_name = user_row.last_name.lower().title().strip()
 
-                resp = get_or_create(email)                    
-                if resp['status'] == 200:
-                    if resp['data']['record_status'] == 'new' and email not in self.user_existing:
-                        self.user_created.append(email)
-                    elif resp['data']['record_status'] == 'existing' and email not in self.user_existing:
-                        self.user_existing.append(email)
-                else:
-                    logger.error(f'User creation failed: {email}')
-                    self.user_errors.append(user_row.email)
+                u = EmailUser.objects.get(email=email)
+                user_id = u.id
 
-                user_id = resp['data']['emailuser_id']
+#                resp = get_or_create(email)                    
+#                if resp['status'] == 200:
+#                    if resp['data']['record_status'] == 'new' and email not in self.user_existing:
+#                        self.user_created.append(email)
+#                    elif resp['data']['record_status'] == 'existing' and email not in self.user_existing:
+#                        self.user_existing.append(email)
+#                else:
+#                    logger.error(f'User creation failed: {email}')
+#                    self.user_errors.append(user_row.email)
+#
+#                user_id = resp['data']['emailuser_id']
                 self.pers_ids.append((user_id, row.name))
 
 #                self.pers_ids.append((user.id, row.name))
@@ -811,8 +824,10 @@ class MooringLicenceReader():
         postfix = ['Nominated Ves', 'Ad Ves 2', 'Ad Ves 3', 'Ad Ves 4', 'Ad Ves 5', 'Ad Ves 6', 'Ad Ves 7']
         for user_id, pers_no in tqdm(self.pers_ids):
             try:
-                #if pers_no=='202600':
-                #    import ipdb; ipdb.set_trace()
+#                if pers_no=='145174':
+#                    import ipdb; ipdb.set_trace()
+#                else:
+#                    continue
 
                 ves_rows = self.df_ves[self.df_ves['Person No']==pers_no]
                 if len(ves_rows) > 1:
@@ -989,7 +1004,12 @@ class MooringLicenceReader():
                     owner = Owner.objects.create(emailuser=user.id)
 
                 ves_type = 'other'
-                vessel_ownership = VesselOwnership.objects.create(owner=owner, vessel=vessel, percentage=100)
+                try:
+                    vessel_ownership = VesselOwnership.objects.get(owner=owner, vessel=vessel)
+                except ObjectDoesNotExist:
+                    vessel_ownership = VesselOwnership.objects.create(owner=owner, vessel=vessel, percentage=100)
+                #vessel_ownership = VesselOwnership.objects.create(owner=owner, vessel=vessel, percentage=100)
+
                 if rego_no in self.dummy_vessels:
                     vessel_ownership.end_date = TODAY
 
@@ -1107,7 +1127,7 @@ class MooringLicenceReader():
         for index, row in tqdm(df.iterrows(), total=df.shape[0]):
             try:
                 
-#                if row.pers_no == '206441':
+#                if row.pers_no == '147244':
 #                    import ipdb; ipdb.set_trace()
 #                else:
 #                    continue
@@ -1404,9 +1424,11 @@ class MooringLicenceReader():
         for index, row in tqdm(df_authuser.iterrows(), total=df_authuser.shape[0]):
             #if row.status != 'Vacant':
             try:
-#                if row.pers_no_l != '206441':
-#                    #import ipdb; ipdb.set_trace()
+#                if row.pers_no_l == '205197' and row.pers_no_u == '213280':
+#                    import ipdb; ipdb.set_trace()
+#                else:
 #                    continue
+                
 
                 #if row.pers_no_l == '019626':
                 #    print(f"rego_no: {row['vessel_rego']}")
@@ -1458,6 +1480,10 @@ class MooringLicenceReader():
                 if sticker_info:
                     sticker_number = sticker_info['au_sticker']
                     sticker_sent = sticker_info['au_sticker_sent']
+                    if sticker_sent=='1/12/223':
+                        # 213280 (andrew@triplettgroup.com.au) VesselDets
+                        sticker_sent='1/12/2023'
+
 
                 if sticker_number is None:
                     no_au_stickers.append(rego_no)
@@ -1535,7 +1561,11 @@ class MooringLicenceReader():
 
                 #import ipdb; ipdb.set_trace()
                 try:
-                    user_row = self.df_user[self.df_user['pers_no']==row.pers_no_u].squeeze() # as Pandas Series
+                    user_row = self.df_user[self.df_user['pers_no']==row.pers_no_u]
+                    if len(user_row)>1:
+                        user_row = self.df_user[(self.df_user['pers_no']==row.pers_no_u) & (self.df_user['email']==email_u)].head(1) # drop duplicates rows
+                    user_row = user_row.squeeze() # as Pandas Series
+
                 except Exception as e:
                     import ipdb; ipdb.set_trace()
                 self.create_proposal_applicant(proposal, user, user_row)
