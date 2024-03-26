@@ -158,6 +158,7 @@ VESSEL_TYPES = (
         ('fishing_boat', 'Fishing Boat'),
         ('tender', 'Tender'),
         ('walkaround', 'Walkaround'),
+        ('yacht', 'Yacht'),
         ('other', 'Other'),
     )
 
@@ -4328,6 +4329,13 @@ class Vessel(RevisionedMixin):
 
     def __str__(self):
         return self.rego_no
+
+    def save(self, *args, **kwargs):
+        super(Vessel, self).save(*args,**kwargs)
+        if any(c for c in self.rego_no if c.islower()):
+            # if any char rego_no is lowercase - make uppercase
+            self.rego_no = self.rego_no.upper()
+            self.save()
 
     def get_current_wlas(self, target_date):
         from mooringlicensing.components.approvals.models import Approval, WaitingListAllocation

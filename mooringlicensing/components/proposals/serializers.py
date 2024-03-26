@@ -1260,7 +1260,10 @@ class InternalProposalSerializer(BaseProposalSerializer):
     def get_fee_invoice_url(self,obj):
         # url = '/payments/invoice-pdf/{}'.format(obj.invoice.reference) if obj.fee_paid else None
         # url = get_invoice_url(obj.invoice.reference) if obj.invoice else ''
-        url = f'/ledger-toolkit-api/invoice-pdf/{obj.invoice.reference}/' if obj.invoice else ''
+        if obj.migrated:
+            url= ''
+        else:
+            url = f'/ledger-toolkit-api/invoice-pdf/{obj.invoice.reference}/' if obj.invoice else ''
         return url
 
 

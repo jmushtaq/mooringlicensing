@@ -54,6 +54,8 @@ from mooringlicensing.components.approvals.models import (
     DcvVessel,
 )
 
+from mooringlicensing.components.payments_ml.models import ApplicationFee, FeeCalculation, FeeItemApplicationFee, FeeItem
+
 from tqdm import tqdm
 import logging
 logger = logging.getLogger(__name__)
@@ -70,24 +72,46 @@ FEE_SEASON = '2023 - 2024'
 #Out[26]: <QuerySet [('wla',), ('aaa',), ('aua',), ('mla',), ('dcvp',), ('dcv',), ('replacement_sticker',), ('mooring_swap',)]>
 
 VESSEL_TYPE_MAPPING = {
-    'A': 'Catamaran',
-    'B': 'Bow Rider',
-    'C': 'Cabin Cruiser',
-    'E': 'Centre Console',
-    'F': 'Ferry',
-    'G': 'Rigid Inflatable',
-    'H': 'Half Cabin',
-    'I': 'Inflatable',
-    'L': 'Launch',
-    'M': 'Motor Sailer',
-    'O': 'Open Boat',
-    'P': 'Power Boat',
+    'A': 'catamaran',
+    'B': 'bow_rider',
+    'C': 'cabin_ruiser',
+    'E': 'centre_console',
+    'F': 'ferry',
+    'G': 'rigid_inflatable',
+    'H': 'half_cabin',
+    'I': 'inflatable',
+    'L': 'launch',
+    'M': 'motor_sailer',
+    'O': 'open_boat',
+    'P': 'power_boat',
     'R': 'Runabout',
-    'S': 'Fishing Boat',
-    'T': 'Tender',
-    'W': 'Walkaround',
-    'Y': 'Yacht',
+    'S': 'fishing_boat',
+    'T': 'tender',
+    'W': 'walkaround',
+    'Y': 'yacht',
 }
+#VESSEL_TYPES = (
+#        ('catamaran', 'Catamaran'),
+#        ('bow_rider', 'Bow Rider'),
+#        ('cabin_ruiser', 'Cabin Cruiser'),
+#        ('centre_console', 'Centre Console'),
+#        ('ferry', 'Ferry'),
+#        ('rigid_inflatable', 'Rigid Inflatable'),
+#        ('half_cabin', 'Half Cabin'),
+#        ('inflatable', 'Inflatable'),
+#        ('launch', 'Launch'),
+#        ('motor_sailer', 'Motor Sailer'),
+#        ('multihull', 'Multihull'),
+#        ('open_boat', 'Open Boat'),
+#        ('power_boat', 'Power Boat'),
+#        ('pwc', 'PWC'),
+#        ('Runabout', 'Runabout'),
+#        ('fishing_boat', 'Fishing Boat'),
+#        ('tender', 'Tender'),
+#        ('walkaround', 'Walkaround'),
+#        ('other', 'Other'),
+#    )
+
 
 USER_COLUMN_MAPPING = {
     'Person No':                        'pers_no',
@@ -298,6 +322,19 @@ class MooringLicenceReader():
 
         !./manage_ml.py loaddata mooringlicensing/fixtures/mooring_mooring_bay.json
 
+
+        FEE CALCULATION
+        #FROM mooringlicensing-uat
+
+        a=MooringLicence.objects.get(id=44950)
+        p=a.current_proposal
+
+        p=MooringLicenceApplication.objects.get(id=1229)
+        application_fee = ApplicationFee.objects.create(proposal=p, created_by=255, payment_type=ApplicationFee.PAYMENT_TYPE_TEMPORARY)
+        lines, db_processes_after_success = p.create_fee_lines() # p.child_objcreate_fee_lines()
+        new_fee_calculation = FeeCalculation.objects.create(uuid=application_fee.uuid, data=db_processes_after_success)
+        
+        dumpdata records example at ~/Downloads/ml_created_diff.json - on JM PC
     """
 
     def __init__(self, fname_user, fname_ml, fname_ves, fname_authuser, fname_wl, fname_aa, path='mooringlicensing/utils/csv/clean/'):
@@ -507,7 +544,7 @@ class MooringLicenceReader():
            proposal=proposal,
            first_name=user_row.first_name,
            last_name=user_row.last_name,
-           dob=parse(user_row.dob).date() if user_row.dob else None,
+           dob=parse(user_row.dob, dayfirst=True).date() if user_row.dob else None,
 
            residential_line1=user_row.address,
            residential_locality=user_row.suburb,
@@ -540,7 +577,7 @@ class MooringLicenceReader():
            proposal=proposal,
            first_name=user_row.first_name,
            last_name=user_row.last_name,
-           dob=parse(user_row.dob).date() if user_row.dob else None,
+           dob=parse(user_row.dob, dayfirst=True).date() if user_row.dob else None,
 
            residential_line1=user_row.address,
            residential_locality=user_row.suburb,
@@ -627,7 +664,7 @@ class MooringLicenceReader():
         for index, row in tqdm(df.iterrows(), total=df.shape[0]):
             #if row.status != 'Vacant':
             try:
-#                if row.name == '205737':
+#                if row.name == '207864':
 #                    import ipdb; ipdb.set_trace()
 #                else:
 #                    continue
@@ -817,6 +854,7 @@ class MooringLicenceReader():
                 val = float(value)
             except Exception:
                 val = 0.00
+                #val = 4.0 # needed for FeeItems record fee calculation
             return val
 
         self.vessels_au = {} 
@@ -860,7 +898,7 @@ class MooringLicenceReader():
                         c_sticker=ves['C Sticker No ' + postfix[i]]
                         au_sticker_date=ves['Date Au Sticker Sent ' + postfix[i]]
 
-#                        if rego_no in ['DY167', '81900']:
+#                        if rego_no in ['ep611', 'EP611']:
 #                            import ipdb; ipdb.set_trace()
 #                        else:
 #                            continue
@@ -897,7 +935,7 @@ class MooringLicenceReader():
                                 vessel=vessel,
                                 vessel_type=ves_type,
                                 vessel_name=ves_name,
-                                vessel_length=try_except(tot_length),
+                                vessel_length=4.0 if try_except(tot_length)==0.0 else try_except(tot_length),
                                 vessel_draft=try_except(draft),
                                 vessel_weight=try_except(tonnage),
                                 berth_mooring=''
@@ -957,9 +995,14 @@ class MooringLicenceReader():
 #                    continue
 
                 rego_no = row.name
+#                if rego_no in ['ep611', 'EP611']:
+#                    import ipdb; ipdb.set_trace()
+#                else:
+#                    continue
+
                 if is_invalid_rego(rego_no):
                     # User is on waiting list without a vessel - assign a dummy vessel
-                    rego_no = f'{row.first_name}_{row.last_name}_{row.pers_no}'.lower()
+                    rego_no = f'{row.first_name}_{row.last_name}_{row.pers_no}_NoVessel_WL'.upper()
                     self.dummy_vessels.append(rego_no)
 
                 vessel, created = Vessel.objects.get_or_create(rego_no=rego_no)
@@ -1026,7 +1069,7 @@ class MooringLicenceReader():
                         vessel=vessel,
                         vessel_type=ves_type,
                         vessel_name=row.vessel_name,
-                        vessel_length=try_except(row.vessel_length),
+                        vessel_length=4.0 if try_except(row.vessel_length)==0.0 else try_except(row.vessel_length),
                         vessel_draft=try_except(row.vessel_draft),
                         vessel_weight=try_except(0.0),
                         berth_mooring=''
@@ -1086,6 +1129,7 @@ class MooringLicenceReader():
 
                     self.vessels_dict.update({rego_no:
                         {
+                            #'length':        tot_length if tot_length>0.0 else 4.0,
                             'length':        tot_length,
                             'draft':         draft,
                             'beam':          beam,
@@ -1127,7 +1171,7 @@ class MooringLicenceReader():
         for index, row in tqdm(df.iterrows(), total=df.shape[0]):
             try:
                 
-#                if row.pers_no == '147244':
+#                if row.pers_no == '109897':
 #                    import ipdb; ipdb.set_trace()
 #                else:
 #                    continue
@@ -1204,7 +1248,9 @@ class MooringLicenceReader():
 #                sticker_sent       = ves_fields('Licencee Sticker Sent', ves_row, pers_no)
 
                 if ves_name=='':
-                    continue 
+                    #import ipdb; ipdb.set_trace()
+                    #continue 
+                    ves_name='NO NAME'
 
                 #if not user_row.empty and user_row.pers_no=='000036':
                 #    import ipdb; ipdb.set_trace()
@@ -1262,7 +1308,7 @@ class MooringLicenceReader():
                     rego_no=rego_no,
                     vessel_type=ves_type,
                     vessel_name=ves_name,
-                    vessel_length=vessel_details.vessel_length,
+                    vessel_length=vessel_details.vessel_length if vessel_details.vessel_length>0.0 else 4.0,
                     vessel_draft=vessel_details.vessel_draft,
                     vessel_beam=vessel_details.vessel_beam,
                     vessel_weight=vessel_details.vessel_weight,
@@ -1294,6 +1340,8 @@ class MooringLicenceReader():
                 )
 
                 self.create_proposal_applicant(proposal, user, user_row)
+
+                create_application_fee(proposal)
 
                 #if not user_row.empty and user_row.pers_no=='000036':
                 #    import ipdb; ipdb.set_trace()
@@ -1424,7 +1472,8 @@ class MooringLicenceReader():
         for index, row in tqdm(df_authuser.iterrows(), total=df_authuser.shape[0]):
             #if row.status != 'Vacant':
             try:
-#                if row.pers_no_l == '205197' and row.pers_no_u == '213280':
+                #if row.pers_no_l == '205197' and row.pers_no_u == '213280':
+#                if row.pers_no_u == '210957':
 #                    import ipdb; ipdb.set_trace()
 #                else:
 #                    continue
@@ -1536,7 +1585,7 @@ class MooringLicenceReader():
                     vessel_name=row['vessel_name'],
                     #vessel_length=row['vessel_length'],
                     #vessel_draft=row['vessel_draft'],
-                    vessel_length=vessel_details.vessel_length,
+                    vessel_length=vessel_details.vessel_length if vessel_details.vessel_length>0.0 else 4.0,
                     vessel_draft=vessel_details.vessel_draft,
                     vessel_beam=vessel_details.vessel_beam,
                     vessel_weight=vessel_details.vessel_weight,
@@ -1715,7 +1764,7 @@ class MooringLicenceReader():
                 vessel_ownership = vessel.vesselownership_set.all()[0]
                 vessel_details = vessel.vesseldetails_set.all()[0]
 
-                start_date = parse(row.date_applied).replace(tzinfo=timezone.utc)
+                start_date = parse(row.date_applied, dayfirst=True).replace(tzinfo=timezone.utc)
                 proposal=WaitingListApplication.objects.create(
                     #proposal_type_id=1,
                     proposal_type_id=ProposalType.objects.get(code='new').id, # new application
@@ -1728,7 +1777,7 @@ class MooringLicenceReader():
                     vessel_type=vessel_type,
 
                     vessel_name=row['vessel_name'],
-                    vessel_length=vessel_details.vessel_length,
+                    vessel_length=vessel_details.vessel_length if vessel_details.vessel_length>0.0 else 4.0,
                     vessel_draft=vessel_details.vessel_draft,
                     vessel_beam=vessel_details.vessel_beam,
                     vessel_weight=vessel_details.vessel_weight,
@@ -1959,7 +2008,7 @@ class MooringLicenceReader():
                 vessel=vessel,
                 vessel_type=ves_type,
                 vessel_name=ves_name,
-                vessel_length=try_except(length),
+                vessel_length=try_except(length) if try_except(length)>0.0 else 4.0,
                 vessel_draft=try_except(draft),
                 vessel_weight=try_except(weight),
                 vessel_beam=try_except(beam),
@@ -2025,7 +2074,7 @@ class MooringLicenceReader():
                         rego_no, 
                         ves_name=vessel_name, # use vessel_name from AA Moorings Spreasheet
                         ves_type=vessel_type,
-                        length=vessel_length, # use vessel_length from AA Moorings Spreasheet
+                        length=vessel_length if vessel_length>0.0 else 4.0, 
                         draft=Decimal(0.0), 
                         beam=Decimal(0.0), 
                         weight=Decimal(0.0), 
@@ -2044,7 +2093,7 @@ class MooringLicenceReader():
                             rego_no, 
                             ves_name=vessel_name, # use vessel_name from AA Moorings Spreasheet
                             ves_type=vessel_type,
-                            length=vessel_length, # use vessel_length from AA Moorings Spreasheet
+                            length=vessel_length if vessel_length>0.0 else 4.0,
                             draft=Decimal(0.0), 
                             beam=Decimal(0.0), 
                             weight=Decimal(0.0), 
@@ -2059,7 +2108,7 @@ class MooringLicenceReader():
 
                 # update length from AA Spreadsheet file
                 vessel_details.vessel_name=vessel_name
-                vessel_details.vessel_length=Decimal(vessel_length) if vessel_length else Decimal(0)
+                vessel_details.vessel_length=Decimal(vessel_length) if vessel_length else Decimal(4.0)
                 vessel_details.save()
 
                 total_aa_created.append(rego_no)
@@ -2417,4 +2466,82 @@ def write_proposal_applicants(filename, path='/tmp/'):
             write.writerows([i.values()])
 
 
+def clear_records():
+    Approval.objects.all().delete()
+    Proposal.objects.all().delete()
+    Vessel.objects.all().delete()
+    Owner.objects.all().delete()
+    Mooring.objects.all().delete()
+    MooringBay.objects.all().delete()
+
+    # !./manage_ml.py loaddata mooringlicensing/fixtures/mooring_mooring_bay.json 
+
+def clear_fixture_records():
+    # !./manage_ml.py loaddata mooringlicensing/fixtures/ml_fixtures2.json
+    from mooringlicensing.components.payments_ml.models import FeeItem, FeeConstructor, FeeSeason, VesselSizeCategory, VesselSizeCategoryGroup, ProposalType
+    FeeItem.objects.all().delete()
+    FeeConstructor.objects.all().delete()
+    FeeSeason.objects.all().delete()
+    VesselSizeCategory.objects.all().delete()
+    VesselSizeCategoryGroup.objects.all().delete()
+    ProposalType.objects.all().delete()
+
+    FeeItem.objects.filter(id__gt=416).delete()
+    ProposalType.objects.filter(id__gt=48).delete()
+
+
+def create_application_fee(proposal):
+    #proposal=MooringLicenceApplication.objects.get(id=1229)
+
+    #import ipdb; ipdb.set_trace()
+    application_fee = ApplicationFee.objects.create(proposal=proposal, created_by=255, payment_type=ApplicationFee.PAYMENT_TYPE_TEMPORARY)
+    lines, db_processes_after_success = proposal.create_fee_lines()
+    new_fee_calculation = FeeCalculation.objects.create(uuid=application_fee.uuid, data=db_processes_after_success)
+
+
+    db_operations = new_fee_calculation.data
+    #proposal = application_fee.proposal
+
+    if 'for_existing_invoice' in db_operations and db_operations['for_existing_invoice']:
+        # For existing invoices, fee_item_application_fee.amount_paid should be updated, once paid
+        for idx in db_operations['fee_item_application_fee_ids']:
+            fee_item_application_fee = FeeItemApplicationFee.objects.get(id=int(idx))
+            fee_item_application_fee.amount_paid = fee_item_application_fee.amount_to_be_paid
+            fee_item_application_fee.save()
+    else:
+
+        if 'fee_item_id' in db_operations:
+            fee_items = FeeItem.objects.filter(id=db_operations['fee_item_id'])
+            if fee_items:
+                amount_paid = None
+                amount_to_be_paid = None
+                if 'fee_amount_adjusted' in db_operations:
+                    fee_amount_adjusted = db_operations['fee_amount_adjusted']
+                    amount_to_be_paid = Decimal(fee_amount_adjusted)
+                    amount_paid = amount_to_be_paid
+                    fee_item = fee_items.first()
+                fee_item_application_fee = FeeItemApplicationFee.objects.create(
+                    fee_item=fee_item,
+                    application_fee=application_fee,
+                    vessel_details=proposal.vessel_details,
+                    amount_to_be_paid=amount_to_be_paid,
+                    amount_paid=amount_paid,
+                )
+                logger.info(f'FeeItemApplicationFee: [{fee_item_application_fee}] created.')
+        if isinstance(db_operations, list):
+            for item in db_operations:
+                fee_item = FeeItem.objects.get(id=item['fee_item_id'])
+                fee_amount_adjusted = item['fee_amount_adjusted']
+                amount_to_be_paid = Decimal(fee_amount_adjusted)
+                amount_paid = amount_to_be_paid
+                vessel_details_id = item['vessel_details_id']  # This could be '' when null vessel application
+                vessel_details = VesselDetails.objects.get(id=vessel_details_id) if vessel_details_id else None
+                fee_item_application_fee = FeeItemApplicationFee.objects.create(
+                    fee_item=fee_item,
+                    application_fee=application_fee,
+                    vessel_details=vessel_details,
+                    amount_to_be_paid=amount_to_be_paid,
+                    amount_paid=amount_paid,
+                )
+                logger.info(f'FeeItemApplicationFee: [{fee_item_application_fee}] has been created.')
 

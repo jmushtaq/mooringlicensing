@@ -21,6 +21,9 @@ def retrieve_email_userro(email_user_id):
 
 def get_invoice_payment_status(invoice_id):
     try:
+        if invoice_id=='migrated':
+            return 'paid'
+
         inv_props = utils.get_invoice_properties(invoice_id)
         invoice_payment_status = inv_props['data']['invoice']['payment_status']
         return invoice_payment_status
